@@ -74,6 +74,11 @@ const Admin = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<"products" | "settings">("products");
+  const [chatbotScript, setChatbotScript] = useState("");
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [settingsError, setSettingsError] = useState("");
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === selectedId) || products[0],
@@ -110,11 +115,52 @@ const Admin = () => {
     }
   }, [token]);
 
+  const loadSettings = useCallback(async () => {
+    try {
+      const response = await fetch("/api/settings");
+      if (response.ok) {
+        const data = await response.json();
+        setChatbotScript(data.chatbotScript || "");
+      }
+    } catch (err) {
+      console.error("Failed to load settings:", err);
+    }
+  }, []);
+
+  const saveSettings = async () => {
+    setIsSavingSettings(true);
+    setSettingsError("");
+    setSettingsMessage("");
+
+    try {
+      const response = await fetch("/api/admin-settings", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ chatbotScript }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Unable to save settings.");
+      }
+
+      setSettingsMessage(data.message || "Settings saved successfully.");
+    } catch (saveError) {
+      setSettingsError(saveError instanceof Error ? saveError.message : "Unable to save settings.");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   useEffect(() => {
     if (token) {
       void loadProducts(token);
+      void loadSettings();
     }
-  }, [loadProducts, token]);
+  }, [loadProducts, loadSettings, token]);
 
   const login = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -303,27 +349,70 @@ const Admin = () => {
     <div className="min-h-screen bg-[#f7f1eb]">
       <Header />
       <main className="mx-auto max-w-7xl px-6 pb-14 pt-24">
+        <div className="mb-8 flex gap-3 border-b border-primary/10 pb-4">
+          <button
+            type="button"
+            onClick={() => setActiveTab("products")}
+            className={`rounded-full px-6 py-2.5 text-sm font-medium tracking-wide transition ${
+              activeTab === "products"
+                ? "bg-primary text-primary-foreground shadow"
+                : "bg-white/70 hover:bg-white text-foreground/80 border border-primary/5 hover:border-primary/20"
+            }`}
+          >
+            Products Catalog
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("settings")}
+            className={`rounded-full px-6 py-2.5 text-sm font-medium tracking-wide transition ${
+              activeTab === "settings"
+                ? "bg-primary text-primary-foreground shadow"
+                : "bg-white/70 hover:bg-white text-foreground/80 border border-primary/5 hover:border-primary/20"
+            }`}
+          >
+            Integrations & Settings
+          </button>
+        </div>
+
         <div className="flex flex-col gap-5 border-b border-primary/10 pb-8 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="luxury-subheading text-foreground/55">Custom CMS</p>
-            <h1 className="mt-3 text-5xl leading-none">Store Products</h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-foreground/68">
-              Edit the product catalogue here. Saving writes the live product data to Vercel Blob,
-              so the storefront can update without a code deploy.
-            </p>
-          </div>
+          {activeTab === "products" ? (
+            <div>
+              <p className="luxury-subheading text-foreground/55">Custom CMS</p>
+              <h1 className="mt-3 text-5xl leading-none">Store Products</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-foreground/68">
+                Edit the product catalogue here. Saving writes the live product data to Vercel Blob,
+                so the storefront can update without a code deploy.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p className="luxury-subheading text-foreground/55">Integrations</p>
+              <h1 className="mt-3 text-5xl leading-none">Global Site Settings</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-foreground/68">
+                Configure global integrations such as live chatbots and analytics tracking snippets that inject into the head of your public storefront pages.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" className="rounded-full" onClick={() => void loadProducts()}>
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Reload
-            </Button>
-            <Button variant="outline" className="rounded-full" onClick={logout}>
-              Log out
-            </Button>
-            <Button className="rounded-full" onClick={() => void saveProducts()} disabled={isSaving}>
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save Changes
-            </Button>
+            {activeTab === "products" ? (
+              <>
+                <Button variant="outline" className="rounded-full" onClick={() => void loadProducts()}>
+                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Reload
+                </Button>
+                <Button variant="outline" className="rounded-full" onClick={logout}>
+                  Log out
+                </Button>
+                <Button className="rounded-full" onClick={() => void saveProducts()} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Changes
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" className="rounded-full" onClick={logout}>
+                Log out
+              </Button>
+            )}
           </div>
         </div>
 
@@ -339,8 +428,9 @@ const Admin = () => {
           </div>
         ) : null}
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-[21rem_minmax(0,1fr)]">
-          <aside className="rounded-[2rem] border border-primary/10 bg-[#fbf7f3] p-4 lg:sticky lg:top-24 lg:self-start">
+        {activeTab === "products" ? (
+          <div className="mt-8 grid gap-8 lg:grid-cols-[21rem_minmax(0,1fr)]">
+            <aside className="rounded-[2rem] border border-primary/10 bg-[#fbf7f3] p-4 lg:sticky lg:top-24 lg:self-start">
             <div className="flex items-center justify-between gap-3 px-2 pb-4">
               <div>
                 <p className="luxury-subheading text-foreground/50">Catalogue</p>
@@ -621,6 +711,50 @@ const Admin = () => {
             </section>
           )}
         </div>
+        ) : (
+          <div className="mt-8 rounded-[2rem] border border-primary/10 bg-[#fbf7f3] p-6 md:p-8 max-w-4xl shadow-[0_30px_90px_-70px_rgba(0,0,0,0.8)] animate-fade-up">
+            <p className="luxury-subheading text-foreground/50">Integrations Manager</p>
+            <h2 className="mt-2 text-4xl font-serif mb-4 leading-none">Chatbot Script</h2>
+            <p className="text-sm leading-7 text-foreground/68 mb-6">
+              Paste the HTML/JavaScript embed code snippet provided by your chatbot service (e.g. Landbot, Intercom, LiveChat, custom widgets). 
+              This script will be dynamically and safely injected right before the closing <code>&lt;/head&gt;</code> tag on every public page of your website.
+            </p>
+            
+            <div className="space-y-6">
+              <Field label="HTML Snippet / Embed Script" hint="Include all necessary <script> tags. Keep empty to disable chatbot.">
+                <textarea
+                  className={`${inputClass} min-h-64 font-mono text-xs leading-normal bg-white/70`}
+                  placeholder="<!-- Paste your third-party script code here -->"
+                  value={chatbotScript}
+                  onChange={(e) => setChatbotScript(e.target.value)}
+                />
+              </Field>
+
+              {settingsMessage ? (
+                <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 animate-fade-in" />
+                  <span>{settingsMessage}</span>
+                </div>
+              ) : null}
+              {settingsError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 animate-fade-in">
+                  {settingsError}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button 
+                  className="rounded-full px-6 h-11" 
+                  onClick={saveSettings} 
+                  disabled={isSavingSettings}
+                >
+                  {isSavingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Settings
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
